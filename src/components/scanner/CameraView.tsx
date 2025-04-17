@@ -1,4 +1,3 @@
-
 import React, { useRef, useEffect, useState } from 'react';
 import { startCamera, stopCamera } from '@/utils/camera';
 import { Camera, CameraOff, RefreshCw } from 'lucide-react';
@@ -62,6 +61,21 @@ const CameraView: React.FC<CameraViewProps> = ({
     };
   }, [isActive, onProductDetected]);
   
+  useEffect(() => {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      console.error("Browser doesn't support getUserMedia!");
+      return;
+    }
+    
+    navigator.permissions.query({ name: 'camera' as PermissionName })
+      .then(permissionStatus => {
+        console.log("Camera permission status:", permissionStatus.state);
+      })
+      .catch(err => {
+        console.error("Error checking camera permissions:", err);
+      });
+  }, []);
+  
   const handleStartCamera = async () => {
     if (!videoRef.current) return;
     
@@ -91,11 +105,24 @@ const CameraView: React.FC<CameraViewProps> = ({
   };
   
   useEffect(() => {
-    // Cleanup on component unmount
+    const videoElement = videoRef.current;
+    console.log("CameraView mounting, videoElement:", videoElement);
+    
+    if (videoElement) {
+      startCamera(videoElement)
+        .then(stream => {
+          console.log("Stream returned:", stream);
+          setStream(stream);
+        })
+        .catch(error => {
+          console.error("Error in useEffect camera initialization:", error);
+        });
+    }
+    
     return () => {
       stopCamera(stream);
     };
-  }, [stream]);
+  }, []);
 
   return (
     <div className={cn("relative rounded-md overflow-hidden bg-black flex items-center justify-center", className)}>
