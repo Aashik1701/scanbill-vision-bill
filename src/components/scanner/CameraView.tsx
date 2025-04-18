@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useState } from 'react';
 import { startCamera, stopCamera, takeSnapshot } from '@/utils/camera';
 import { loadModel, detectObjects } from '@/services/modelService';
@@ -6,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import DetectionOverlay from './DetectionOverlay';
 import { DetectedObject } from '@/types';
 import { cn } from '@/lib/utils';
+import { useToast } from '@/components/ui/use-toast';
 
 interface CameraViewProps {
   onProductDetected?: (detectedObject: DetectedObject) => void;
@@ -24,19 +26,35 @@ const CameraView: React.FC<CameraViewProps> = ({
   const [isModelLoaded, setIsModelLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [detections, setDetections] = useState<DetectedObject[]>([]);
+  const [lastDetectionTime, setLastDetectionTime] = useState(0);
+  const { toast } = useToast();
+  
+  // Detection cooldown in milliseconds (to prevent duplicate detections)
+  const DETECTION_COOLDOWN = 1500;
   
   // Load YOLOv8 model
   useEffect(() => {
     const initModel = async () => {
-      const success = await loadModel();
-      setIsModelLoaded(success);
-      if (!success) {
-        setError('Failed to load object detection model');
+      try {
+        const success = await loadModel();
+        setIsModelLoaded(success);
+        if (!success) {
+          setError('Failed to load object detection model');
+        } else {
+          toast({
+            title: "Model Loaded",
+            description: "Object detection model is ready",
+          });
+        }
+      } catch (err) {
+        console.error("Model loading error:", err);
+        setError('Failed to load model: ' + (err as Error).message);
+        setIsModelLoaded(false);
       }
     };
     
     initModel();
-  }, []);
+  }, [toast]);
   
   // Run detection on video frames
   useEffect(() => {
@@ -48,26 +66,48 @@ const CameraView: React.FC<CameraViewProps> = ({
     if (!ctx) return;
     
     let animationFrameId: number;
+    let lastProcessedTime = 0;
+    const PROCESSING_INTERVAL = 100; // Process every 100ms for efficiency
     
-    const detectFrame = async () => {
-      // Draw current video frame to canvas
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      
-      // Get image data for processing
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      
-      // Detect objects
-      const newDetections = await detectObjects(imageData);
-      setDetections(newDetections);
-      
-      // If we have a new detection with high confidence, notify parent
-      if (newDetections.length > 0 && onProductDetected) {
-        // Find detection with highest confidence
-        const bestDetection = newDetections.reduce((best, current) => 
-          current.confidence > best.confidence ? current : best, newDetections[0]);
+    const detectFrame = async (timestamp: number) => {
+      // Throttle processing to improve performance
+      if (timestamp - lastProcessedTime > PROCESSING_INTERVAL) {
+        lastProcessedTime = timestamp;
         
-        if (bestDetection.confidence > 0.7) {
-          onProductDetected(bestDetection);
+        // Ensure video is playing and has valid dimensions
+        if (video.readyState === video.HAVE_ENOUGH_DATA && video.videoWidth > 0 && video.videoHeight > 0) {
+          // Set canvas dimensions to match video
+          if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+          }
+          
+          // Draw current video frame to canvas
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          
+          try {
+            // Get image data for processing
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            
+            // Detect objects
+            const newDetections = await detectObjects(imageData);
+            setDetections(newDetections);
+            
+            // Notify parent component of high-confidence detections
+            const currentTime = Date.now();
+            if (newDetections.length > 0 && onProductDetected && currentTime - lastDetectionTime > DETECTION_COOLDOWN) {
+              // Find detection with highest confidence
+              const bestDetection = newDetections.reduce((best, current) => 
+                current.confidence > best.confidence ? current : best, newDetections[0]);
+              
+              if (bestDetection.confidence > 0.5) {
+                onProductDetected(bestDetection);
+                setLastDetectionTime(currentTime);
+              }
+            }
+          } catch (err) {
+            console.error("Detection error:", err);
+          }
         }
       }
       
@@ -82,7 +122,7 @@ const CameraView: React.FC<CameraViewProps> = ({
     return () => {
       cancelAnimationFrame(animationFrameId);
     };
-  }, [isActive, isModelLoaded, onProductDetected]);
+  }, [isActive, isModelLoaded, onProductDetected, lastDetectionTime]);
   
   const handleStartCamera = async () => {
     if (!videoRef.current) return;
@@ -96,17 +136,33 @@ const CameraView: React.FC<CameraViewProps> = ({
         setStream(newStream);
         setIsActive(true);
         
-        // Set canvas dimensions to match video
-        if (canvasRef.current && videoRef.current) {
-          const { videoWidth, videoHeight } = videoRef.current;
-          canvasRef.current.width = videoWidth;
-          canvasRef.current.height = videoHeight;
-        }
+        toast({
+          title: "Camera Active",
+          description: "Point your camera at products to scan them",
+        });
+        
+        // Set canvas dimensions to match video once video metadata is loaded
+        videoRef.current.onloadedmetadata = () => {
+          if (canvasRef.current && videoRef.current) {
+            canvasRef.current.width = videoRef.current.videoWidth;
+            canvasRef.current.height = videoRef.current.videoHeight;
+          }
+        };
       } else {
         setError('Could not start camera stream');
+        toast({
+          title: "Camera Error",
+          description: "Could not access camera",
+          variant: "destructive",
+        });
       }
     } catch (err) {
       setError('Error accessing camera: ' + (err as Error).message);
+      toast({
+        title: "Camera Error",
+        description: (err as Error).message,
+        variant: "destructive",
+      });
     } finally {
       setIsLoading(false);
     }
@@ -117,6 +173,10 @@ const CameraView: React.FC<CameraViewProps> = ({
     setStream(null);
     setIsActive(false);
     setDetections([]);
+    toast({
+      title: "Camera Stopped",
+      description: "Camera has been turned off",
+    });
   };
   
   // Cleanup on unmount
@@ -137,7 +197,7 @@ const CameraView: React.FC<CameraViewProps> = ({
         className={`w-full h-full object-cover ${!isActive ? 'hidden' : ''}`}
       />
       
-      {/* Canvas for processing (hidden) */}
+      {/* Canvas for processing */}
       <canvas 
         ref={canvasRef}
         className="hidden" 

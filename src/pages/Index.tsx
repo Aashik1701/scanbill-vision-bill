@@ -18,11 +18,15 @@ const Index: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
   const [currentBill, setCurrentBill] = useState<Bill | null>(null);
   const [showBillModal, setShowBillModal] = useState(false);
+  const [detectionEnabled, setDetectionEnabled] = useState(true);
 
   // Handle product detection
   const handleProductDetected = (detection: DetectedObject) => {
+    // Skip if detection is disabled
+    if (!detectionEnabled) return;
+    
     // Only add products with high confidence
-    if (detection.confidence < 0.7) return;
+    if (detection.confidence < 0.6) return;
     
     const productInfo = findProductInfo(detection.class);
     
@@ -57,10 +61,19 @@ const Index: React.FC = () => {
         duration: 2000,
       });
     }
+    
+    // Temporarily disable detection to prevent duplicates
+    setDetectionEnabled(false);
+    setTimeout(() => setDetectionEnabled(true), 3000);
   };
 
   // Handle quantity updates
   const handleUpdateQuantity = (id: string, newQuantity: number) => {
+    if (newQuantity <= 0) {
+      handleRemoveProduct(id);
+      return;
+    }
+    
     setProducts((prev) =>
       prev.map((product) =>
         product.id === id
@@ -73,6 +86,12 @@ const Index: React.FC = () => {
   // Handle product removal
   const handleRemoveProduct = (id: string) => {
     setProducts((prev) => prev.filter((product) => product.id !== id));
+    
+    toast({
+      title: "Product removed",
+      description: "Product removed from bill",
+      duration: 2000,
+    });
   };
 
   // Generate bill
@@ -95,13 +114,16 @@ const Index: React.FC = () => {
   const handleSendEmail = (email: string) => {
     if (!currentBill) return;
     
-    // Mock sending email
-    toast({
-      title: "Email sent",
-      description: `Bill has been sent to ${email}`,
-    });
-    
+    // Close modal after email is sent
     setShowBillModal(false);
+    
+    // Reset products after successful email
+    setProducts([]);
+    
+    toast({
+      title: "Ready for next customer",
+      description: "Bill sent and products cleared",
+    });
   };
 
   // Close modal
