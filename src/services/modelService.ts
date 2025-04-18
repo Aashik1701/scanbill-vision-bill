@@ -16,6 +16,15 @@ const NMS_THRESHOLD = 0.45;
 
 let session: ort.InferenceSession | null = null;
 
+// Initialize onnxruntime-web with WASM assets location
+// This is crucial for proper initialization
+ort.env.wasm.wasmPaths = {
+  'ort-wasm.wasm': '/node_modules/onnxruntime-web/dist/ort-wasm.wasm',
+  'ort-wasm-simd.wasm': '/node_modules/onnxruntime-web/dist/ort-wasm-simd.wasm',
+  'ort-wasm-threaded.wasm': '/node_modules/onnxruntime-web/dist/ort-wasm-threaded.wasm',
+  'ort-wasm-simd-threaded.wasm': '/node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm'
+};
+
 export async function loadModel(): Promise<boolean> {
   if (session) return true;
   

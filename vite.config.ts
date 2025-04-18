@@ -1,4 +1,4 @@
-// filepath: /Users/aashik/MyCourse/Computer Vision/scanbill-vision-bill/vite.config.ts
+
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
@@ -19,8 +19,6 @@ export default defineConfig(({ mode }) => ({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
-      // Fix for onnxruntime-web
-      "onnxruntime-web": path.resolve(__dirname, "node_modules/onnxruntime-web/dist/ort.es6.min.js"),
     },
   },
   optimizeDeps: {
